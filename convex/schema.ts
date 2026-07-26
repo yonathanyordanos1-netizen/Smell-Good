@@ -8,6 +8,7 @@ export default defineSchema({
     description: v.string(),
     price: v.number(), // Price in ETB
     imageUrl: v.string(),
+    imageStorageId: v.optional(v.string()), // Convex storage ID for uploaded images
     category: v.string(),
     notes: v.array(v.string()), // Fragrance notes
     volume: v.optional(v.string()), // e.g., "50ml", "100ml"
@@ -33,6 +34,7 @@ export default defineSchema({
     status: v.string(), // "pending", "confirmed", "shipped", "delivered", "cancelled"
     notes: v.optional(v.string()),
     paymentMethod: v.string(), // "telebirr", "cash"
+    paymentScreenshot: v.optional(v.string()), // Convex storage ID for payment screenshot
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_status", ["status"]),

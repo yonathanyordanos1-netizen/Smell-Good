@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useCart } from "../context/CartContext";
+import { uploadFile } from "../hooks/useProducts";
 
 export default function Checkout() {
   const navigate = useNavigate();
   const { items, totalPrice, clearCart } = useCart();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -15,9 +17,13 @@ export default function Checkout() {
     notes: "",
     paymentMethod: "telebirr",
   });
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const placeOrder = useMutation(api.orders.placeOrder);
+  const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
 
   const formattedPrice = (price: number) =>
     new Intl.NumberFormat("en-ET", {
@@ -29,12 +35,30 @@ export default function Checkout() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };  const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setScreenshotFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setScreenshotPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      let paymentScreenshot: string | undefined;
+
+      // Upload screenshot if Telebirr + file selected
+      if (formData.paymentMethod === "telebirr" && screenshotFile) {
+        setUploadProgress("Uploading payment screenshot...");
+        const storageId = await uploadFile(generateUploadUrl, screenshotFile);
+        paymentScreenshot = storageId;
+      }
+
+      setUploadProgress("Placing your order...");
       // Submit order to Convex
       await placeOrder({
         customerName: formData.name,
@@ -49,6 +73,7 @@ export default function Checkout() {
         total: totalPrice,
         notes: formData.notes || undefined,
         paymentMethod: formData.paymentMethod === "telebirr" ? "Telebirr" : "Cash on Delivery",
+        paymentScreenshot,
       });
     } catch (err) {
       console.warn("Failed to save order to Convex, running in demo mode:", err);
@@ -56,6 +81,7 @@ export default function Checkout() {
     setOrderPlaced(true);
     clearCart();
     setIsSubmitting(false);
+    setUploadProgress(null);
   };
 
   // If cart is empty and we haven't just placed an order, redirect to cart
@@ -236,10 +262,45 @@ export default function Checkout() {
                 </div>
 
                 {formData.paymentMethod === "telebirr" && (
-                  <div className="mt-4 p-4 bg-aqua/10 rounded-xl text-sm text-gray-600">
-                    <p className="font-medium text-ocean mb-1">📱 Demo Notice</p>
-                    This is a demo website. In the full version, you would be redirected to Telebirr to complete payment.
-                    For now, your order will be recorded and the admin will contact you for payment.
+                  <div className="mt-4">
+                    <div className="p-4 bg-aqua/10 rounded-xl text-sm text-gray-600 mb-4">
+                      <p className="font-medium text-ocean mb-1">📱 Telebirr Payment</p>
+                      Send <strong>{formattedPrice(totalPrice)}</strong> to <strong>09XX XXX XXX</strong> and upload the payment screenshot below.
+                    </div>
+                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-ocean transition-colors cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleScreenshotChange}
+                        className="hidden"
+                      />
+                      {screenshotPreview ? (
+                        <div className="space-y-3">
+                          <img
+                            src={screenshotPreview}
+                            alt="Payment screenshot preview"
+                            className="max-h-48 mx-auto rounded-lg shadow-sm"
+                          />
+                          <p className="text-sm text-green-600 font-medium">
+                            ✅ Screenshot selected — click to change
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="py-4">
+                          <svg className="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <p className="text-sm text-gray-500 font-medium">
+                            Upload Payment Screenshot
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Tap to select a screenshot of your Telebirr payment
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -293,7 +354,7 @@ export default function Checkout() {
                       : "bg-ocean text-white hover:bg-ocean/90"
                   }`}
                 >
-                  {isSubmitting ? "Placing Order..." : "Place Order (Demo)"}
+                  {isSubmitting ? (uploadProgress || "Placing Order...") : "Place Order"}
                 </button>
 
                 <p className="text-xs text-gray-400 text-center mt-3">

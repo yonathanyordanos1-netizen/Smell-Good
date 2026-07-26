@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { uploadFile } from "../hooks/useProducts";
 
 interface DemoOrder {
   id: string;
@@ -12,6 +13,8 @@ interface DemoOrder {
   total: number;
   status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
   paymentMethod: string;
+  paymentScreenshot?: string;
+  paymentScreenshotUrl?: string | null;
   createdAt: string;
 }
 
@@ -38,6 +41,13 @@ export default function AdminDashboard() {
   // --- Orders ---
   const convexOrders = useQuery(api.orders.getAll);
   const updateStatusMutation = useMutation(api.orders.updateStatus);
+  const screenshotStorageIds = convexOrders
+    ?.filter((o) => o.paymentScreenshot)
+    .map((o) => o.paymentScreenshot!) ?? [];
+  const screenshotUrlMap = useQuery(
+    api.storage.getStorageUrlMap,
+    screenshotStorageIds.length > 0 ? { storageIds: screenshotStorageIds } : "skip"
+  );
 
   const orders: DemoOrder[] = convexOrders
     ? convexOrders.map((o) => ({
@@ -50,6 +60,8 @@ export default function AdminDashboard() {
         total: o.total,
         status: o.status as DemoOrder["status"],
         paymentMethod: o.paymentMethod,
+        paymentScreenshot: o.paymentScreenshot,
+        paymentScreenshotUrl: o.paymentScreenshot && screenshotUrlMap ? screenshotUrlMap[o.paymentScreenshot] : null,
         createdAt: new Date(o.createdAt).toLocaleDateString(),
       }))
     : demoOrders;
@@ -73,27 +85,67 @@ export default function AdminDashboard() {
     ? null
     : convexProducts;
 
+  const generateUploadUrl = useMutation(api.storage.generateUploadUrl);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<string | null>(null);
   const [addForm, setAddForm] = useState({
     name: "", slug: "", description: "", price: "", imageUrl: "", category: "",
     notes: "", volume: "", inStock: true, featured: false,
   });
+  const [addFormImageFile, setAddFormImageFile] = useState<File | null>(null);
+  const [addFormImagePreview, setAddFormImagePreview] = useState<string | null>(null);
+  const [editImageProductId, setEditImageProductId] = useState<string | null>(null);
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   const [editPrices, setEditPrices] = useState<Record<string, string>>({});
   const [editStock, setEditStock] = useState<Record<string, boolean>>({});
   const [editFeatured, setEditFeatured] = useState<Record<string, boolean>>({});
   const [savingPrice, setSavingPrice] = useState<string | null>(null);
 
+  const handleAddFormImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAddFormImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setAddFormImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleEditImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setEditImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setEditImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addForm.name || !addForm.price) return;
+    setUploadingImage(true);
     try {
+      let imageUrl = addForm.imageUrl || "/images/perfumes/default.jpg";
+      let imageStorageId: string | undefined;
+
+      // Upload image if selected
+      if (addFormImageFile) {
+        imageStorageId = await uploadFile(generateUploadUrl, addFormImageFile);
+        imageUrl = ""; // Will be resolved from storage ID
+      }
+
       await createProduct({
         name: addForm.name,
         slug: addForm.slug || addForm.name.toLowerCase().replace(/\s+/g, "-"),
         description: addForm.description || "A premium fragrance.",
         price: parseInt(addForm.price) || 0,
-        imageUrl: addForm.imageUrl || "/images/perfumes/default.jpg",
+        imageUrl,
+        imageStorageId,
         category: addForm.category || "Uncategorized",
         notes: addForm.notes ? addForm.notes.split(",").map((n) => n.trim()) : [],
         volume: addForm.volume || undefined,
@@ -102,7 +154,23 @@ export default function AdminDashboard() {
       });
       setShowAddForm(false);
       setAddForm({ name: "", slug: "", description: "", price: "", imageUrl: "", category: "", notes: "", volume: "", inStock: true, featured: false });
+      setAddFormImageFile(null);
+      setAddFormImagePreview(null);
     } catch (err) { console.warn("Failed to create product:", err); }
+    setUploadingImage(false);
+  };
+
+  const handleUpdateProductImage = async (productId: string) => {
+    if (!editImageFile) return;
+    setUploadingImage(true);
+    try {
+      const imageStorageId = await uploadFile(generateUploadUrl, editImageFile);
+      await updateProduct({ id: productId as any, imageUrl: "", imageStorageId });
+      setEditImageProductId(null);
+      setEditImageFile(null);
+      setEditImagePreview(null);
+    } catch (err) { console.warn("Failed to update product image:", err); }
+    setUploadingImage(false);
   };
 
   const handleUpdatePrice = async (productId: string) => {
@@ -227,6 +295,26 @@ export default function AdminDashboard() {
                         <div><span className="text-gray-500">Phone</span><p className="font-medium text-gray-900">{selectedOrder.customerPhone}</p></div>
                         <div><span className="text-gray-500">Address</span><p className="font-medium text-gray-900">{selectedOrder.customerAddress}</p></div>
                         <div><span className="text-gray-500">Payment</span><p className="font-medium text-gray-900">{selectedOrder.paymentMethod}</p></div>
+                        {selectedOrder.paymentScreenshotUrl && (
+                          <div>
+                            <span className="text-gray-500">Payment Screenshot</span>
+                            <div className="mt-2">
+                              <img
+                                src={selectedOrder.paymentScreenshotUrl}
+                                alt="Payment screenshot"
+                                className="rounded-xl border border-gray-200 max-h-64 w-full object-contain bg-gray-50 cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() => window.open(selectedOrder.paymentScreenshotUrl!, '_blank')}
+                              />
+                              <p className="text-xs text-gray-400 mt-1">Click to open full size</p>
+                            </div>
+                          </div>
+                        )}
+                        {selectedOrder.paymentScreenshot && !selectedOrder.paymentScreenshotUrl && (
+                          <div>
+                            <span className="text-gray-500">Payment Screenshot</span>
+                            <p className="text-xs text-gray-400 mt-1 italic">Loading screenshot...</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -355,11 +443,41 @@ export default function AdminDashboard() {
                       placeholder="e.g. 100ml"
                       className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean text-sm" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Image URL</label>
-                    <input type="text" value={addForm.imageUrl} onChange={(e) => setAddForm({ ...addForm, imageUrl: e.target.value })}
-                      placeholder="/images/perfumes/..."
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean text-sm" />
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Product Image</label>
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-ocean transition-colors cursor-pointer"
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAddFormImage}
+                        className="hidden"
+                      />
+                      {addFormImagePreview ? (
+                        <div className="space-y-2">
+                          <img src={addFormImagePreview} alt="Preview" className="max-h-32 mx-auto rounded-lg" />
+                          <p className="text-xs text-green-600 font-medium">✅ Image selected — click to change</p>
+                        </div>
+                      ) : (
+                        <div className="py-3">
+                          <svg className="w-8 h-8 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <p className="text-sm text-gray-500 font-medium">Upload product image from gallery</p>
+                          <p className="text-xs text-gray-400 mt-1">or enter a URL instead below</p>
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={addForm.imageUrl}
+                      onChange={(e) => setAddForm({ ...addForm, imageUrl: e.target.value })}
+                      placeholder="Or paste image URL here..."
+                      className="mt-2 w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean text-xs"
+                    />
                   </div>
                   <div className="sm:col-span-2 lg:col-span-3">
                     <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
@@ -384,10 +502,11 @@ export default function AdminDashboard() {
                       <span className="text-sm text-gray-700">Featured</span>
                     </label>
                   </div>
-                  <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
-                    <button type="submit"
+                  <div className="sm:col-span-2 lg:col-span-3 flex justify-end items-center gap-4">
+                    {uploadingImage && <span className="text-sm text-ocean">Uploading image...</span>}
+                    <button type="submit" disabled={uploadingImage}
                       className="bg-ocean text-white px-8 py-3 rounded-xl text-sm font-semibold hover:bg-ocean/90 transition-all btn-press active:scale-[0.98]">
-                      Create Product
+                      {uploadingImage ? "Uploading..." : "Create Product"}
                     </button>
                   </div>
                 </form>
@@ -483,15 +602,65 @@ export default function AdminDashboard() {
                             </button>
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => handleDeleteProduct(product._id)}
-                              className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                              title="Delete product"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              {editImageProductId === product._id ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    ref={editFileInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleEditImageSelect}
+                                    className="hidden"
+                                  />
+                                  {editImagePreview ? (
+                                    <div className="flex items-center gap-2">
+                                      <img src={editImagePreview} alt="" className="w-8 h-8 rounded object-cover" />
+                                      <button
+                                        onClick={() => handleUpdateProductImage(product._id)}
+                                        disabled={uploadingImage}
+                                        className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
+                                      >
+                                        {uploadingImage ? "..." : "Save"}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => editFileInputRef.current?.click()}
+                                      className="text-xs bg-ocean text-white px-2 py-1 rounded hover:bg-ocean/90"
+                                    >
+                                      Choose
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => { setEditImageProductId(null); setEditImageFile(null); setEditImagePreview(null); }}
+                                    className="text-xs text-gray-400 hover:text-gray-600"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => setEditImageProductId(product._id)}
+                                    className="p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
+                                    title="Change image"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteProduct(product._id)}
+                                    className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                                    title="Delete product"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))

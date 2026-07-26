@@ -6,6 +6,7 @@ export interface DisplayProduct {
   description: string;
   price: number;
   imageUrl: string;
+  imageStorageId?: string; // Convex storage ID for uploaded images
   category: string;
   notes: string[];
   volume?: string;

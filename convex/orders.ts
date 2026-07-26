@@ -47,6 +47,7 @@ export const placeOrder = mutation({
     total: v.number(),
     notes: v.optional(v.string()),
     paymentMethod: v.string(),
+    paymentScreenshot: v.optional(v.string()), // Convex storage ID
   },
   handler: async (ctx, args) => {
     const now = Date.now();
