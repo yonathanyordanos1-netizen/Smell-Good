@@ -1,4 +1,5 @@
 {
+  "name": "smell-good",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "devCommand": "npm run dev",
