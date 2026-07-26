@@ -12,8 +12,12 @@ export default function Layout() {
     if (pathname !== displayPathname) {
       setIsTransitioning(true);
       const timeout = setTimeout(() => {
+        // Phase 1: Change the key so the new page mounts with opacity-0
         setDisplayPathname(pathname);
-        setIsTransitioning(false);
+        // Phase 2: After mount, trigger the entrance animation
+        requestAnimationFrame(() => {
+          setIsTransitioning(false);
+        });
       }, 250);
       return () => clearTimeout(timeout);
     }
