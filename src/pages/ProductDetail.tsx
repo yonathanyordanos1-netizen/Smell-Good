@@ -1,5 +1,5 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { perfumeData, getImageUrlForProduct } from "../data/products";
+import { useProduct, useProducts } from "../hooks/useProducts";
 import { useCart } from "../context/CartContext";
 import { useState } from "react";
 
@@ -9,8 +9,16 @@ export default function ProductDetail() {
   const { addItem } = useCart();
   const [addedToCart, setAddedToCart] = useState(false);
 
-  const productIndex = perfumeData.findIndex((p) => p.slug === slug);
-  const product = perfumeData[productIndex];
+  const { product, isLoading } = useProduct(slug);
+  const { products } = useProducts();
+
+  if (isLoading && !product) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-ocean border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!product) {
     return (
@@ -34,17 +42,17 @@ export default function ProductDetail() {
 
   const handleAddToCart = () => {
     addItem({
-      productId: `products:${productIndex}` as any,
+      productId: (product._id || `static:${product.slug}`) as any,
       name: product.name,
       price: product.price,
-      imageUrl: getImageUrlForProduct(productIndex),
+      imageUrl: product.imageUrl,
       volume: product.volume,
     });
     setAddedToCart(true);
     setTimeout(() => setAddedToCart(false), 2000);
   };
 
-  const relatedProducts = perfumeData
+  const relatedProducts = products
     .filter((p) => p.category === product.category && p.slug !== product.slug)
     .slice(0, 4);
 
@@ -65,7 +73,7 @@ export default function ProductDetail() {
           {/* Image */}
           <div className="relative aspect-[3/4] rounded-3xl overflow-hidden bg-gradient-to-br from-aqua/30 to-white shadow-lg">
             <img
-              src={getImageUrlForProduct(productIndex)}
+              src={product.imageUrl}
               alt={product.name}
               className="w-full h-full object-cover"
             />
@@ -178,9 +186,7 @@ export default function ProductDetail() {
               Related Fragrances
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {relatedProducts.map((rp) => {
-                const rpIndex = perfumeData.findIndex((p) => p.slug === rp.slug);
-                return (
+              {relatedProducts.map((rp) => (
                   <Link
                     key={rp.slug}
                     to={`/shop/${rp.slug}`}
@@ -188,7 +194,7 @@ export default function ProductDetail() {
                   >
                     <div className="relative aspect-[4/5] overflow-hidden bg-gradient-to-br from-aqua/30 to-white">
                       <img
-                        src={getImageUrlForProduct(rpIndex)}
+                        src={rp.imageUrl}
                         alt={rp.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         loading="lazy"
@@ -203,8 +209,7 @@ export default function ProductDetail() {
                       </p>
                     </div>
                   </Link>
-                );
-              })}
+                ))}
             </div>
           </section>
         )}

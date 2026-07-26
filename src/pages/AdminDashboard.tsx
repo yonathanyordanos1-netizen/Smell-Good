@@ -68,6 +68,11 @@ export default function AdminDashboard() {
   const updateProduct = useMutation(api.products.update);
   const removeProduct = useMutation(api.products.remove);
 
+  // Fallback to static data when Convex is loading or unavailable
+  const products = convexProducts === undefined
+    ? null
+    : convexProducts;
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<string | null>(null);
   const [addForm, setAddForm] = useState({
@@ -405,12 +410,12 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {convexProducts === undefined ? (
+                    {products === null ? (
                       <tr><td colSpan={7} className="text-center py-12"><div className="w-8 h-8 border-4 border-ocean border-t-transparent rounded-full animate-spin mx-auto" /></td></tr>
-                    ) : convexProducts.length === 0 ? (
+                    ) : products.length === 0 ? (
                       <tr><td colSpan={7} className="text-center py-12 text-gray-400">No products yet. Add your first product above.</td></tr>
                     ) : (
-                      convexProducts.map((product) => (
+                      products.map((product) => (
                         <tr key={product._id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">

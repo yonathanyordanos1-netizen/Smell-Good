@@ -1,9 +1,14 @@
 import { Link } from "react-router-dom";
-import { perfumeData, getImageUrlForProduct } from "../data/products";
+import { useProducts } from "../hooks/useProducts";
 import AnimatedSection from "../components/AnimatedSection";
 
 export default function Home() {
-  const featuredProducts = perfumeData.filter((p) => p.featured);
+  const { products } = useProducts();
+  const featuredProducts = products.filter((p) => p.featured);
+  // If static data fallback, use the original indexed image mapping
+  const getImage = (index: number, p: typeof products[0]) => {
+    return p.imageUrl;
+  };
 
   return (
     <div>
@@ -90,7 +95,7 @@ export default function Home() {
                 >
                   <div className="relative aspect-[4/5] overflow-hidden bg-gradient-to-br from-aqua/30 to-white">
                     <img
-                      src={getImageUrlForProduct(index)}
+                      src={getImage(index, product)}
                       alt={product.name}
                       className="w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-110"
                     />
@@ -101,7 +106,7 @@ export default function Home() {
                     <h3 className="text-lg font-semibold text-gray-900 group-hover:text-ocean transition-colors duration-200">
                       {product.name}
                     </h3>
-                    <p className="text-gray-400 text-sm mt-1 transition-colors duration-200 group-hover:text-ocean/40">{product.volume}</p>
+                    {product.volume && <p className="text-gray-400 text-sm mt-1 transition-colors duration-200 group-hover:text-ocean/40">{product.volume}</p>}
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 transition-all duration-300 group-hover:border-ocean/20">
                       <span className="text-lg font-bold text-ocean transition-transform duration-200 group-hover:scale-105 origin-left">
                         {new Intl.NumberFormat("en-ET", { style: "currency", currency: "ETB", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(product.price)}

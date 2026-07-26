@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { perfumeData, getImageUrlForProduct, getAllCategories } from "../data/products";
+import { getAllCategories } from "../data/products";
+import { useProducts } from "../hooks/useProducts";
 import AnimatedSection from "../components/AnimatedSection";
 
 export default function Shop() {
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [sortBy, setSortBy] = useState<string>("default");
+  const { products } = useProducts();
 
-  const categories = ["All", ...getAllCategories(perfumeData)];
+  const categories = ["All", ...getAllCategories(products)];
 
   let filtered = selectedCategory === "All"
-    ? perfumeData
-    : perfumeData.filter((p) => p.category === selectedCategory);
+    ? products
+    : products.filter((p) => p.category === selectedCategory);
 
   switch (sortBy) {
     case "price-asc":
@@ -81,8 +83,7 @@ export default function Shop() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filtered.map((product) => {
-              const productIndex = perfumeData.findIndex((p) => p.slug === product.slug);
+            {filtered.map((product, productIndex) => {
               const formattedPrice = new Intl.NumberFormat("en-ET", {
                 style: "currency",
                 currency: "ETB",
@@ -98,7 +99,7 @@ export default function Shop() {
                   >
                     <div className="relative aspect-[4/5] overflow-hidden bg-gradient-to-br from-aqua/30 to-white">
                       <img
-                        src={getImageUrlForProduct(productIndex)}
+                        src={product.imageUrl}
                         alt={product.name}
                         className="w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-110"
                         loading="lazy"
